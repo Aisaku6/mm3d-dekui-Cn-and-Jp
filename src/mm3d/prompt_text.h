@@ -4,25 +4,25 @@
 #include <string>
 #include <string_view>
 namespace MM3D::PromptText {
-struct Entry {std::string_view english,french,spanish;};
+struct Entry {std::string_view english,chinese,french,spanish;};
 inline constexpr std::array Entries{
-    Entry{"Change tab","Changer d'onglet","Cambiar pestaña"},
-    Entry{"Select","Choisir","Elegir"},
-    Entry{"Choose","Choisir","Elegir"}, Entry{"Return","Retour","Volver"},
-    Entry{"Equip to I","Assigner I","Asignar a I"}, Entry{"Equip to II","Assigner II","Asignar a II"},
-    Entry{"Items","Inventaire","Inventario"}, Entry{"Map","Carte","Mapa"},
-    Entry{"Zoom in","Zoom +","Acercar"}, Entry{"Zoom out","Zoom -","Alejar"},
-    Entry{"View schedule","Voir horaires","Ver horarios"}, Entry{"View events","Voir l'historique","Ver eventos"},
-    Entry{"View map","Carte","Mapa"}, Entry{"Set alarm","Alarme","Alarma"},
-    Entry{"Schedule details","Détails horaires","Detalles horario"},
-    Entry{"Event details","Détails","Detalles suceso"},
-    Entry{"Songs","Chants","Canciones"}, Entry{"Cancel","Annuler","Cancelar"},
-    Entry{"Move map","Déplacer la carte","Mover mapa"},
-    Entry{"Back","Retour","Volver"}, Entry{"Move cursor","Déplacer","Mover cursor"},
+    Entry{"Change tab","换页","Changer d'onglet","Cambiar pestaña"},
+    Entry{"Select","选择","Choisir","Elegir"},
+    Entry{"Choose","选择","Choisir","Elegir"}, Entry{"Return","返回","Retour","Volver"},
+    Entry{"Equip to I","装备到I","Assigner I","Asignar a I"}, Entry{"Equip to II","装备到II","Assigner II","Asignar a II"},
+    Entry{"Items","道具","Inventaire","Inventario"}, Entry{"Map","地图","Carte","Mapa"},
+    Entry{"Zoom in","详细","Zoom +","Acercar"}, Entry{"Zoom out","全体","Zoom -","Alejar"},
+    Entry{"View schedule","计划表","Voir horaires","Ver horarios"}, Entry{"View events","事件","Voir l'historique","Ver eventos"},
+    Entry{"View map","地图","Carte","Mapa"}, Entry{"Set alarm","闹钟","Alarme","Alarma"},
+    Entry{"Schedule details","计划表详情","Détails horaires","Detalles horario"},
+    Entry{"Event details","事件详情","Détails","Detalles suceso"},
+    Entry{"Songs","乐谱","Chants","Canciones"}, Entry{"Cancel","取消","Annuler","Cancelar"},
+    Entry{"Move map","移动地图","Déplacer la carte","Mover mapa"},
+    Entry{"Back","返回","Retour","Volver"}, Entry{"Move cursor","移动光标","Déplacer","Mover cursor"},
 };
 inline std::string_view Translate(unsigned language,std::string_view english) {
     for(const auto& e:Entries)if(e.english==english)
-        return language==4?e.french:language==8?e.spanish:e.english;
+        return language==1?e.chinese:language==4?e.french:language==8?e.spanish:e.english;
     return english;
 }
 // Read the active message archive, not a requested language awaiting restart.
