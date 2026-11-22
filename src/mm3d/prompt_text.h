@@ -9,7 +9,7 @@ inline constexpr std::array Entries{
     Entry{"Change tab","切换菜单","Changer d'onglet","Cambiar pestaña"},
     Entry{"Select","选择","Choisir","Elegir"},
     Entry{"Choose","选择","Choisir","Elegir"}, Entry{"Return","返回","Retour","Volver"},
-    Entry{"Equip to I","装备到I","Assigner I","Asignar a I"}, Entry{"Equip to II","装备到II","Assigner II","Asignar a II"},
+    Entry{"Equip to I","装备到 I","Assigner I","Asignar a I"}, Entry{"Equip to II","装备到 II","Assigner II","Asignar a II"},
     Entry{"Items","道具","Inventaire","Inventario"}, Entry{"Map","地图","Carte","Mapa"},
     Entry{"Zoom in","详细","Zoom +","Acercar"}, Entry{"Zoom out","全体","Zoom -","Alejar"},
     Entry{"View schedule","计划表","Voir horaires","Ver horarios"}, Entry{"View events","事件","Voir l'historique","Ver eventos"},
