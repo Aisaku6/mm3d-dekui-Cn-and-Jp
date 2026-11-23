@@ -44,6 +44,8 @@
 #include "mm3d/trace.h"
 #include "mm3d/camera_live.h"
 #include <chrono>
+#include <array>
+#include <mutex>
 #include "mm3d/widescreen.h"
 #include "mm3d/widescreen_probe.h"
 #endif
@@ -845,20 +847,46 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     const auto wide_viewport=regs.rasterizer.GetViewportRect();
     const bool wide_top=MM3D::Widescreen::Active() && !shadow_rendering && using_color_fb &&
         MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight());
-    // Measure the runtime CityHash64 of the 32x32 IA8 fairy-glow texture.
-    if(regs.pipeline.num_vertices<=4 && regs.texturing.main_config.texture0_enable &&
-       regs.texturing.texture0_format==Pica::TexturingRegs::TextureFormat::IA8 &&
-       regs.texturing.texture0.width==32 && regs.texturing.texture0.height==32) {
-        const auto glow_ref=memory.GetPhysicalRef(regs.texturing.texture0.GetPhysicalAddress());
-        constexpr u32 glow_bytes=32u*32u*2u;
-        if(glow_ref.GetSize()>=glow_bytes) {
-            const u64 glow_hash=Common::ComputeHash64<Common::HashAlgo64::CityHash>(
-                glow_ref.GetPtr(),glow_bytes);
-            static u64 last_glow_hash=0;
-            if(glow_hash!=last_glow_hash) {
-                last_glow_hash=glow_hash;
-                LOG_INFO(Render_Vulkan,"glow tex hash {:016X}",glow_hash);
-            }
+    // Temporary probe: log small textured draws (vertex count + texture0/1 format and size)
+    // and hash any 32x32 IA8 slot so we can identify the fairy-glow draw at runtime.
+    if(regs.pipeline.num_vertices<=32 &&
+       (unsigned(regs.texturing.main_config.texture0_enable) ||
+        unsigned(regs.texturing.main_config.texture1_enable))) {
+        static std::mutex tex_probe_mutex;
+        static std::array<std::array<u64,9>,256> tex_probe_seen{};
+        static unsigned tex_probe_count=0;
+        const u32 t0f=unsigned(regs.texturing.texture0_format);
+        const u32 t1f=unsigned(regs.texturing.texture1_format);
+        const std::array<u64,9> key{
+            u64(regs.pipeline.num_vertices),
+            u64(unsigned(regs.texturing.main_config.texture0_enable)),
+            u64(unsigned(regs.texturing.main_config.texture1_enable)),
+            u64(t0f),u64(regs.texturing.texture0.width),u64(regs.texturing.texture0.height),
+            u64(t1f),u64(regs.texturing.texture1.width),u64(regs.texturing.texture1.height)};
+        std::scoped_lock lock(tex_probe_mutex);
+        bool seen=false;
+        for(unsigned i=0;i<tex_probe_count;++i)if(tex_probe_seen[i]==key){seen=true;break;}
+        if(!seen && tex_probe_count<256) {
+            tex_probe_seen[tex_probe_count++]=key;
+            LOG_INFO(Render_Vulkan,"tex diag v={} t0={} f{} {}x{} t1={} f{} {}x{}",
+                unsigned(regs.pipeline.num_vertices),
+                unsigned(regs.texturing.main_config.texture0_enable),
+                t0f,unsigned(regs.texturing.texture0.width),unsigned(regs.texturing.texture0.height),
+                unsigned(regs.texturing.main_config.texture1_enable),
+                t1f,unsigned(regs.texturing.texture1.width),unsigned(regs.texturing.texture1.height));
+            const auto hash_slot=[&](const Pica::TexturingRegs::TextureConfig& cfg,u32 fmt) {
+                if(fmt!=u32(Pica::TexturingRegs::TextureFormat::IA8) ||
+                   cfg.width!=32 || cfg.height!=32) return;
+                const auto ref=memory.GetPhysicalRef(cfg.GetPhysicalAddress());
+                constexpr u32 bytes=32u*32u*2u;
+                if(ref.GetSize()>=bytes) {
+                    const u64 h=Common::ComputeHash64<Common::HashAlgo64::CityHash>(
+                        ref.GetPtr(),bytes);
+                    LOG_INFO(Render_Vulkan,"tex diag hash {:016X}",h);
+                }
+            };
+            hash_slot(regs.texturing.texture0,t0f);
+            hash_slot(regs.texturing.texture1,t1f);
         }
     }
 
