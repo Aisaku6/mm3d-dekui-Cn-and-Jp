@@ -44,8 +44,6 @@
 #include "mm3d/trace.h"
 #include "mm3d/camera_live.h"
 #include <chrono>
-#include <array>
-#include <mutex>
 #include "mm3d/widescreen.h"
 #include "mm3d/widescreen_probe.h"
 #endif
@@ -847,6 +845,23 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     const auto wide_viewport=regs.rasterizer.GetViewportRect();
     const bool wide_top=MM3D::Widescreen::Active() && !shadow_rendering && using_color_fb &&
         MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight());
+    // Measure the runtime CityHash64 of the 32x32 IA8 fairy-glow texture.
+    if(regs.pipeline.num_vertices<=4 && regs.texturing.main_config.texture0_enable &&
+       regs.texturing.texture0_format==Pica::TexturingRegs::TextureFormat::IA8 &&
+       regs.texturing.texture0.width==32 && regs.texturing.texture0.height==32) {
+        const auto glow_ref=memory.GetPhysicalRef(regs.texturing.texture0.GetPhysicalAddress());
+        constexpr u32 glow_bytes=32u*32u*2u;
+        if(glow_ref.GetSize()>=glow_bytes) {
+            const u64 glow_hash=Common::ComputeHash64<Common::HashAlgo64::CityHash>(
+                glow_ref.GetPtr(),glow_bytes);
+            static u64 last_glow_hash=0;
+            if(glow_hash!=last_glow_hash) {
+                last_glow_hash=glow_hash;
+                LOG_INFO(Render_Vulkan,"glow tex hash {:016X}",glow_hash);
+            }
+        }
+    }
+
     std::optional<unsigned> lens_kind,letterbox_kind;
     MM3D::LensInterpolation::Values lens_values{};
     if(!shadow_rendering && using_color_fb &&
@@ -910,20 +925,6 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     // All three lens passes must cover the same full viewport. Compressing
     // only the stencil masks leaves visible-state strips beside the purple cover.
     wide_bypass |= lens_kind.has_value();
-    // Fairy glow (Tatl) is a 4-vertex billboard sampling a 32x32 IA8 sprite
-    // whose runtime texture hash is 103624DFF24D9BF3. Fullscreen filters keep bypass.
-    if(wide_bypass && regs.pipeline.num_vertices<=4 &&
-       regs.texturing.main_config.texture0_enable &&
-       regs.texturing.texture0_format==Pica::TextureFormat::IA8 &&
-       regs.texturing.texture0.width==32 && regs.texturing.texture0.height==32) {
-        const auto ref=memory.GetPhysicalRef(regs.texturing.texture0.GetPhysicalAddress());
-        constexpr u32 tex_bytes=32u*32u*2u;
-        if(ref.GetSize()>=tex_bytes) {
-            const u64 th=Common::ComputeHash64<Common::HashAlgo64::CityHash>(ref.GetPtr(),tex_bytes);
-            LOG_INFO(Render_Vulkan,"glow candidate hash {:016X} match={}",th,th==0x103624DFF24D9BF3ULL);
-            if(th==0x103624DFF24D9BF3ULL)wide_bypass=false;
-        }
-    }
     const float wide_scale=wide_top && !wide_bypass?MM3D::Widescreen::HorizontalScale:1.f;
     // Depth testing is a provisional world-draw filter, not a verified camera identity.
     // Keep zoom independent of the widescreen checkbox and exclude shadow/offscreen layouts.
@@ -940,38 +941,6 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
         vs_data.clip_scale_x = zoom_scale;
         vs_data.clip_scale_y = wide_scale * zoom_scale;
         vs_data_dirty = true;
-    }
-    // Temporary diagnostic: log unique small draws with viewport, texture and widescreen state.
-    if(!shadow_rendering && using_color_fb && regs.pipeline.num_vertices<=8 &&
-       MM3D::Widescreen::enabled.load()) {
-        static std::mutex diag_mutex;
-        static std::array<std::array<unsigned long long,11>,256> diag_seen{};
-        static unsigned diag_count=0;
-        const unsigned long long vw=unsigned(wide_viewport.GetWidth());
-        const unsigned long long vh=unsigned(wide_viewport.GetHeight());
-        const auto sh=pica.vs_setup.GetProgramCodeHash();
-        const auto sw=pica.vs_setup.GetSwizzleDataHash();
-        const unsigned long long tex=unsigned(regs.texturing.main_config.texture0_enable)|
-            (unsigned(regs.texturing.main_config.texture1_enable)<<1)|
-            (unsigned(regs.texturing.main_config.texture2_enable)<<2);
-        const unsigned long long ta=unsigned(regs.texturing.texture0.GetPhysicalAddress());
-        const unsigned long long tw=unsigned(regs.texturing.texture0.width);
-        const unsigned long long th=unsigned(regs.texturing.texture0.height);
-        const std::array<unsigned long long,11> key{vw,vh,sh,sw,
-            (unsigned long long)regs.pipeline.num_vertices,tex,ta,tw,th,
-            (unsigned long long)wide_top,(unsigned long long)wide_bypass};
-        std::scoped_lock lock(diag_mutex);
-        bool seen=false;
-        for(unsigned i=0;i<diag_count;++i)if(diag_seen[i]==key){seen=true;break;}
-        if(!seen && diag_count<256) {
-            diag_seen[diag_count++]=key;
-            LOG_INFO(Render_Vulkan,
-                "diag small draw vp={}x{} wide_top={} bypass={} scale={} verts={} tex={} tex0={:08x} {}x{} fmt={} shader={:016x} swizzle={:016x}",
-                vw,vh,wide_top,wide_bypass,wide_scale,unsigned(regs.pipeline.num_vertices),tex,
-                unsigned(regs.texturing.texture0.GetPhysicalAddress()),
-                unsigned(regs.texturing.texture0.width),unsigned(regs.texturing.texture0.height),
-                unsigned(regs.texturing.texture0_format),sh,sw);
-        }
     }
     if(wide_top) ++MM3D::Widescreen::frame_corrected_draws;
     MM3D::Textures::hide_current_draw = false;
