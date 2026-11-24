@@ -8,6 +8,7 @@
 #include "common/literals.h"
 #include "common/logging/log.h"
 #include "common/math_util.h"
+#include "common/cityhash.h"
 #include "common/microprofile.h"
 #include "common/settings.h"
 #include "core/core.h"
@@ -907,6 +908,27 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     // All three lens passes must cover the same full viewport. Compressing
     // only the stencil masks leaves visible-state strips beside the purple cover.
     wide_bypass |= lens_kind.has_value();
+    // Fairy glow (Tatl) samples the 32x32 IA8 sprite whose runtime texture hash is
+    // 5036B4F571DC3849. Fullscreen filters keep their bypass; only this quad is corrected.
+    if(wide_bypass && regs.pipeline.num_vertices<=32) {
+        const auto glow_check=[&](const Pica::TexturingRegs::TextureConfig& cfg,u32 fmt,bool enabled) {
+            if(!enabled || fmt!=static_cast<u32>(Pica::TexturingRegs::TextureFormat::IA8) ||
+               cfg.width!=32 || cfg.height!=32) return false;
+            const auto ref=memory.GetPhysicalRef(cfg.GetPhysicalAddress());
+            constexpr u32 glow_bytes=32u*32u*2u;
+            if(ref.GetSize()<glow_bytes) return false;
+            const u64 h=Common::CityHash64(reinterpret_cast<const char*>(ref.GetPtr()),glow_bytes);
+            return h==0x5036B4F571DC3849ULL;
+        };
+        if(glow_check(regs.texturing.texture0,
+                      static_cast<u32>(regs.texturing.texture0_format.Value()),
+                      regs.texturing.main_config.texture0_enable.Value()) ||
+           glow_check(regs.texturing.texture1,
+                      static_cast<u32>(regs.texturing.texture1_format.Value()),
+                      regs.texturing.main_config.texture1_enable.Value()))
+            wide_bypass=false;
+    }
+
     const float wide_scale=wide_top && !wide_bypass?MM3D::Widescreen::HorizontalScale:1.f;
     // Depth testing is a provisional world-draw filter, not a verified camera identity.
     // Keep zoom independent of the widescreen checkbox and exclude shadow/offscreen layouts.
